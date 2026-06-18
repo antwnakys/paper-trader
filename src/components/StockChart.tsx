@@ -11,17 +11,13 @@ type Candle = { t: number; c: number };
 const UP = "#16c784";
 const DOWN = "#ea3943";
 
-const RANGES = [
-  { label: "1M", days: 30 },
-  { label: "3M", days: 90 },
-  { label: "1Y", days: 365 },
-];
+const RANGES = ["1D", "1W", "1M", "3M", "1Y"] as const;
 
 export default function StockChart({ symbol }: { symbol?: string }) {
-  const [days, setDays] = useState(90);
+  const [range, setRange] = useState<(typeof RANGES)[number]>("3M");
 
   const { data, isLoading } = useSWR<{ symbol: string; series: Candle[] }>(
-    symbol ? `/api/chart?symbol=${encodeURIComponent(symbol)}&days=${days}` : null,
+    symbol ? `/api/chart?symbol=${encodeURIComponent(symbol)}&range=${range}` : null,
     fetcher,
     { refreshInterval: 60_000 }
   );
@@ -82,21 +78,20 @@ export default function StockChart({ symbol }: { symbol?: string }) {
           </div>
           {series.length > 1 && (
             <div className={`text-sm ${pnlClass(change)}`}>
-              {fmtMoney(change, { sign: true })} ({fmtPercent(changePct)}) ·{" "}
-              {RANGES.find((r) => r.days === days)?.label ?? `${days}d`}
+              {fmtMoney(change, { sign: true })} ({fmtPercent(changePct)}) · {range}
             </div>
           )}
         </div>
         <div className="inline-flex rounded-lg border border-border bg-panel2 p-0.5 text-xs">
           {RANGES.map((r) => (
             <button
-              key={r.label}
-              onClick={() => setDays(r.days)}
-              className={`rounded-md px-3 py-1 ${
-                days === r.days ? "bg-border text-text" : "text-muted"
+              key={r}
+              onClick={() => setRange(r)}
+              className={`rounded-md px-2.5 py-1 ${
+                range === r ? "bg-border text-text" : "text-muted"
               }`}
             >
-              {r.label}
+              {r}
             </button>
           ))}
         </div>

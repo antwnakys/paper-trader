@@ -168,39 +168,61 @@ function mulberry32(seed: number) {
   };
 }
 
+export type ChartRange = "1D" | "1W" | "1M" | "3M" | "1Y";
+
+const DAY_MS = 86_400_000;
+
+// Point count and spacing per range. Intraday ranges use finer steps.
+const RANGE_CONFIG: Record<ChartRange, { points: number; stepMs: number }> = {
+  "1D": { points: 78, stepMs: 5 * 60_000 }, // ~6.5h of 5-min bars
+  "1W": { points: 56, stepMs: 3 * 60 * 60_000 }, // 3-hour bars over a week
+  "1M": { points: 30, stepMs: DAY_MS },
+  "3M": { points: 90, stepMs: DAY_MS },
+  "1Y": { points: 365, stepMs: DAY_MS },
+};
+
+export function isChartRange(s: string): s is ChartRange {
+  return Object.prototype.hasOwnProperty.call(RANGE_CONFIG, s);
+}
+
 /**
- * Daily close series for a symbol, ending exactly at the current quote price.
+ * Price series for a symbol over a range, ending exactly at the current quote.
  *
  * Finnhub's free tier no longer serves candles, so we synthesize a deterministic
  * random walk seeded by the symbol and anchored to the live (or simulated)
- * price. Stable per symbol, and the last point always matches the quote.
+ * price. Per-step volatility scales with the step size (√time), so intraday
+ * ranges look calm and yearly ranges show larger swings. Stable per symbol, and
+ * the last point always matches the quote.
  */
-export async function getDailySeries(
+export async function getSeries(
   symbol: string,
-  days = 90
+  range: ChartRange = "3M"
 ): Promise<Candle[]> {
   const sym = symbol.trim().toUpperCase();
   if (!sym) return [];
 
+  const { points, stepMs } = RANGE_CONFIG[range];
   const quote = await getQuote(sym);
   const end = quote?.price ?? 100;
+
+  // ±2% daily vol, scaled to the step size so shorter bars move less.
+  const amplitude = 0.04 * Math.sqrt(stepMs / DAY_MS);
 
   const rand = mulberry32(hashString(sym));
   // Walk backwards from the current price, then reverse so it ends at `end`.
   const closes: number[] = [];
   let v = end;
-  for (let i = 0; i < days; i++) {
+  for (let i = 0; i < points; i++) {
     closes.push(v);
-    const shock = (rand() - 0.5) * 0.04; // ~±2% daily moves
+    const shock = (rand() - 0.5) * amplitude;
     v = v / (1 + shock);
     if (v < 1) v = 1;
   }
   closes.reverse();
 
-  const dayMs = 86_400_000;
   const now = Date.now();
   return closes.map((c, i) => ({
-    t: now - (days - 1 - i) * dayMs,
+    t: now - (points - 1 - i) * stepMs,
     c: +c.toFixed(2),
   }));
 }
