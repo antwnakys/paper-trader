@@ -5,10 +5,11 @@ independent accounts**, pick a starting balance for each, trade **live US
 stocks**, and track your P&L — all with simulated money.
 
 Built as a portfolio piece with **Next.js 14 (App Router)**, **TypeScript**,
-**Prisma**, **NextAuth**, and **Tailwind CSS**. Designed to deploy to **Vercel +
-Supabase**.
+**Prisma**, **NextAuth**, and **Tailwind CSS**, deployed on **Vercel + Supabase**.
 
-![Tech](https://img.shields.io/badge/Next.js-14-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Prisma](https://img.shields.io/badge/Prisma-5-2D3748) ![License](https://img.shields.io/badge/license-MIT-green)
+### 🔗 [Live demo → paper-trader-gamma.vercel.app](https://paper-trader-gamma.vercel.app)
+
+[![Live Demo](https://img.shields.io/badge/Live_Demo-paper--trader-3b82f6?logo=vercel&logoColor=white)](https://paper-trader-gamma.vercel.app) ![Tech](https://img.shields.io/badge/Next.js-14-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Prisma](https://img.shields.io/badge/Prisma-5-2D3748) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
