@@ -150,3 +150,57 @@ export async function searchSymbols(query: string): Promise<SymbolMatch[]> {
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Historical series (for charts)
+// ---------------------------------------------------------------------------
+
+export type Candle = { t: number; c: number };
+
+// Small seeded PRNG so a symbol's chart is stable across requests.
+function mulberry32(seed: number) {
+  return function () {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Daily close series for a symbol, ending exactly at the current quote price.
+ *
+ * Finnhub's free tier no longer serves candles, so we synthesize a deterministic
+ * random walk seeded by the symbol and anchored to the live (or simulated)
+ * price. Stable per symbol, and the last point always matches the quote.
+ */
+export async function getDailySeries(
+  symbol: string,
+  days = 90
+): Promise<Candle[]> {
+  const sym = symbol.trim().toUpperCase();
+  if (!sym) return [];
+
+  const quote = await getQuote(sym);
+  const end = quote?.price ?? 100;
+
+  const rand = mulberry32(hashString(sym));
+  // Walk backwards from the current price, then reverse so it ends at `end`.
+  const closes: number[] = [];
+  let v = end;
+  for (let i = 0; i < days; i++) {
+    closes.push(v);
+    const shock = (rand() - 0.5) * 0.04; // ~±2% daily moves
+    v = v / (1 + shock);
+    if (v < 1) v = 1;
+  }
+  closes.reverse();
+
+  const dayMs = 86_400_000;
+  const now = Date.now();
+  return closes.map((c, i) => ({
+    t: now - (days - 1 - i) * dayMs,
+    c: +c.toFixed(2),
+  }));
+}

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 
 import { fetcher, postJson } from "@/lib/fetcher";
 import { fmtMoney, fmtNumber, fmtPercent, pnlClass } from "@/lib/format";
 import TradeTicket from "@/components/TradeTicket";
+import StockChart from "@/components/StockChart";
 
 type AccountData = {
   portfolio: {
@@ -52,8 +53,16 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
     fetcher,
     { refreshInterval: 10000 }
   );
-  const [preset, setPreset] = useState<string | undefined>();
+  // The "active" symbol drives both the chart and the trade ticket.
+  const [active, setActive] = useState<string | undefined>();
   const [resetting, setResetting] = useState(false);
+
+  // Default the active symbol to the first holding once data loads; never
+  // override a selection the user has already made.
+  useEffect(() => {
+    const first = data?.positions?.[0]?.symbol;
+    if (first) setActive((cur) => cur ?? first);
+  }, [data]);
 
   if (isLoading) return <p className="mt-8 text-muted">Loading account…</p>;
   if (error || !data) return <p className="mt-8 text-down">Failed to load account.</p>;
@@ -101,26 +110,30 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Equity" value={fmtMoney(summary.equity)} />
-        <Stat label="Cash" value={fmtMoney(summary.cash)} />
-        <Stat
-          label="Total return"
-          value={fmtMoney(summary.totalReturn, { sign: true })}
-          sub={fmtPercent(summary.totalReturnPercent)}
-          tone={summary.totalReturn}
-        />
-        <Stat
-          label="Realized P&L"
-          value={fmtMoney(summary.realizedPnl, { sign: true })}
-          tone={summary.realizedPnl}
-        />
-      </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[230px_1fr_360px]">
+        {/* Left: account stats sidebar */}
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-1">
+            <Stat label="Equity" value={fmtMoney(summary.equity)} />
+            <Stat label="Cash" value={fmtMoney(summary.cash)} />
+            <Stat
+              label="Total return"
+              value={fmtMoney(summary.totalReturn, { sign: true })}
+              sub={fmtPercent(summary.totalReturnPercent)}
+              tone={summary.totalReturn}
+            />
+            <Stat
+              label="Realized P&L"
+              value={fmtMoney(summary.realizedPnl, { sign: true })}
+              tone={summary.realizedPnl}
+            />
+          </div>
+        </aside>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
-        {/* Left: positions + history */}
-        <div className="space-y-6">
-          <Positions positions={positions} onTrade={(s) => setPreset(s)} />
+        {/* Middle: chart + positions + history */}
+        <div className="min-w-0 space-y-6">
+          <StockChart symbol={active} />
+          <Positions positions={positions} active={active} onPick={setActive} />
           <History trades={trades} />
         </div>
 
@@ -129,7 +142,7 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
           <TradeTicket
             portfolioId={portfolioId}
             cash={summary.cash}
-            presetSymbol={preset}
+            presetSymbol={active}
             onDone={() => mutate()}
           />
         </div>
@@ -162,10 +175,12 @@ function Stat({
 
 function Positions({
   positions,
-  onTrade,
+  active,
+  onPick,
 }: {
   positions: AccountData["positions"];
-  onTrade: (symbol: string) => void;
+  active?: string;
+  onPick: (symbol: string) => void;
 }) {
   return (
     <div className="card overflow-hidden">
@@ -190,8 +205,20 @@ function Positions({
             </thead>
             <tbody>
               {positions.map((p) => (
-                <tr key={p.id} className="border-b border-border/50 last:border-0">
-                  <td className="px-4 py-2 font-mono font-medium">{p.symbol}</td>
+                <tr
+                  key={p.id}
+                  onClick={() => onPick(p.symbol)}
+                  className={`cursor-pointer border-b border-border/50 last:border-0 hover:bg-panel2 ${
+                    p.symbol === active ? "bg-panel2" : ""
+                  }`}
+                  title={`Show ${p.symbol} chart`}
+                >
+                  <td className="px-4 py-2 font-mono font-medium">
+                    {p.symbol === active && (
+                      <span className="mr-1 text-brand">▸</span>
+                    )}
+                    {p.symbol}
+                  </td>
                   <td className="px-4 py-2 text-right font-mono">{fmtNumber(p.quantity)}</td>
                   <td className="px-4 py-2 text-right font-mono">{fmtMoney(p.avgCost)}</td>
                   <td className="px-4 py-2 text-right font-mono">{fmtMoney(p.price)}</td>
@@ -204,7 +231,10 @@ function Positions({
                   </td>
                   <td className="px-4 py-2 text-right">
                     <button
-                      onClick={() => onTrade(p.symbol)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPick(p.symbol);
+                      }}
                       className="text-xs text-brand hover:underline"
                     >
                       Trade
