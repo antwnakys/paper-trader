@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { fetcher, postJson, del } from "@/lib/fetcher";
 import { fmtMoney } from "@/lib/format";
 import { DEFAULT_STARTING_BALANCE } from "@/lib/constants";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type Portfolio = {
   id: string;
@@ -27,6 +28,11 @@ export default function AccountsManager() {
   const [balance, setBalance] = useState(String(DEFAULT_STARTING_BALANCE));
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Account pending deletion (drives the in-app confirm dialog).
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(
+    null
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const portfolios = data?.portfolios ?? [];
   const max = data?.max ?? 20;
@@ -51,12 +57,18 @@ export default function AccountsManager() {
     }
   }
 
-  async function deleteAccount(id: string, label: string) {
-    if (!confirm(`Delete "${label}"? This permanently removes its positions and history.`)) {
-      return;
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await del(`/api/portfolios/${pendingDelete.id}`);
+      setPendingDelete(null);
+      mutate();
+    } catch (err) {
+      setFormError((err as Error).message);
+    } finally {
+      setDeleting(false);
     }
-    await del(`/api/portfolios/${id}`);
-    mutate();
   }
 
   return (
@@ -118,7 +130,7 @@ export default function AccountsManager() {
               <div className="flex items-start justify-between">
                 <div className="font-semibold">{p.name}</div>
                 <button
-                  onClick={() => deleteAccount(p.id, p.name)}
+                  onClick={() => setPendingDelete({ id: p.id, name: p.name })}
                   className="text-xs text-muted hover:text-down"
                   title="Delete account"
                 >
@@ -150,6 +162,17 @@ export default function AccountsManager() {
           ))}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title={`Delete "${pendingDelete?.name ?? ""}"?`}
+        message="This permanently removes the account along with its positions and trade history. This can't be undone."
+        confirmLabel="Delete account"
+        danger
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
