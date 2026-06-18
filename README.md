@@ -13,6 +13,18 @@ Built as a portfolio piece with **Next.js 14 (App Router)**, **TypeScript**,
 
 ---
 
+## Screenshots
+
+**Manage up to 20 paper trading accounts**
+
+![Accounts dashboard](docs/screenshots/dashboard.png)
+
+**Trade live US stocks with charts, positions & full P&L**
+
+![Trading view](docs/screenshots/account.png)
+
+---
+
 ## Features
 
 - 🔐 **Google sign-in** (OAuth via NextAuth, database sessions)
