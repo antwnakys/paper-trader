@@ -33,6 +33,8 @@ export default function TradeTicket({
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [qty, setQty] = useState("1");
+  const [amount, setAmount] = useState("1000");
+  const [mode, setMode] = useState<"shares" | "dollars">("shares");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -92,13 +94,41 @@ export default function TradeTicket({
     loadQuote(s);
   }
 
+  const price = quote?.price ?? 0;
   const quantity = Number(qty);
-  const estimate = quote && Number.isFinite(quantity) ? quote.price * quantity : 0;
+  const amountNum = Number(amount);
+  // Estimated cost/proceeds and implied share count, per input mode.
+  const estimate =
+    mode === "dollars"
+      ? Number.isFinite(amountNum)
+        ? amountNum
+        : 0
+      : quote && Number.isFinite(quantity)
+      ? price * quantity
+      : 0;
+  const estShares =
+    mode === "dollars"
+      ? price > 0 && Number.isFinite(amountNum)
+        ? amountNum / price
+        : 0
+      : Number.isFinite(quantity)
+      ? quantity
+      : 0;
   const canAfford = side === "SELL" || estimate <= cash;
 
   async function submit() {
-    if (!symbol || !Number.isFinite(quantity) || quantity <= 0) {
-      setMsg({ kind: "err", text: "Enter a symbol and a positive quantity." });
+    const valid =
+      mode === "dollars"
+        ? Number.isFinite(amountNum) && amountNum > 0
+        : Number.isFinite(quantity) && quantity > 0;
+    if (!symbol || !valid) {
+      setMsg({
+        kind: "err",
+        text:
+          mode === "dollars"
+            ? "Enter a symbol and a positive dollar amount."
+            : "Enter a symbol and a positive quantity.",
+      });
       return;
     }
     setSubmitting(true);
@@ -107,7 +137,7 @@ export default function TradeTicket({
       const data = await postJson(`/api/portfolios/${portfolioId}/orders`, {
         symbol,
         side,
-        quantity,
+        ...(mode === "dollars" ? { amount: amountNum } : { quantity }),
       });
       const t = data.trade;
       setMsg({
@@ -203,17 +233,76 @@ export default function TradeTicket({
         </button>
       </div>
 
-      {/* Quantity */}
-      <div className="mt-3">
-        <label className="label">Quantity (shares)</label>
-        <input
-          className="input"
-          type="number"
-          min={0}
-          step="any"
-          value={qty}
-          onChange={(e) => setQty(e.target.value)}
-        />
+      {/* Order size: shares or dollars */}
+      <div className="mt-4">
+        <div className="mb-2 inline-flex rounded-lg border border-border bg-panel2 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("shares")}
+            className={`rounded-md px-3 py-1 ${mode === "shares" ? "bg-border text-text" : "text-muted"}`}
+          >
+            Shares
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("dollars")}
+            className={`rounded-md px-3 py-1 ${mode === "dollars" ? "bg-border text-text" : "text-muted"}`}
+          >
+            Dollars
+          </button>
+        </div>
+
+        {mode === "shares" ? (
+          <>
+            <label className="label">Quantity (shares)</label>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step="any"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <label className="label">Amount to invest (USD)</label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
+                $
+              </span>
+              <input
+                className="input pl-6"
+                type="number"
+                min={0}
+                step="any"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {[100, 500, 1000].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAmount(String(v))}
+                  className="rounded-md border border-border bg-panel2 px-2 py-1 text-xs text-muted hover:text-text"
+                >
+                  ${v}
+                </button>
+              ))}
+              {side === "BUY" && (
+                <button
+                  type="button"
+                  onClick={() => setAmount(String(Math.floor(cash * 100) / 100))}
+                  className="rounded-md border border-border bg-panel2 px-2 py-1 text-xs text-muted hover:text-text"
+                >
+                  Max
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Estimate */}
@@ -221,6 +310,14 @@ export default function TradeTicket({
         <span className="text-muted">Estimated {side === "BUY" ? "cost" : "proceeds"}</span>
         <span className="font-mono">{fmtMoney(estimate)}</span>
       </div>
+      {quote && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted">Estimated shares</span>
+          <span className="font-mono">
+            {estShares > 0 ? estShares.toFixed(4) : "—"}
+          </span>
+        </div>
+      )}
       <div className="flex justify-between text-sm">
         <span className="text-muted">Buying power</span>
         <span className="font-mono">{fmtMoney(cash)}</span>

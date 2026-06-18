@@ -13,10 +13,17 @@ export async function POST(req: Request, { params }: Params) {
   const body = await req.json().catch(() => ({}));
   const symbol = String(body.symbol ?? "");
   const side = String(body.side ?? "").toUpperCase();
-  const quantity = Number(body.quantity);
 
   if (side !== "BUY" && side !== "SELL") {
     return NextResponse.json({ error: "side must be BUY or SELL" }, { status: 400 });
+  }
+
+  // Order size: dollar `amount` takes precedence, otherwise share `quantity`.
+  const size: { amount?: number; quantity?: number } = {};
+  if (body.amount !== undefined && body.amount !== null && body.amount !== "") {
+    size.amount = Number(body.amount);
+  } else {
+    size.quantity = Number(body.quantity);
   }
 
   try {
@@ -25,7 +32,7 @@ export async function POST(req: Request, { params }: Params) {
       portfolioId: params.id,
       symbol,
       side,
-      quantity,
+      ...size,
     });
     return NextResponse.json({ trade: result }, { status: 201 });
   } catch (err) {
