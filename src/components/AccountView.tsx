@@ -7,6 +7,7 @@ import { fetcher, postJson } from "@/lib/fetcher";
 import { fmtMoney, fmtNumber, fmtPercent, pnlClass } from "@/lib/format";
 import TradeTicket from "@/components/TradeTicket";
 import StockChart from "@/components/StockChart";
+import PromptDialog from "@/components/PromptDialog";
 
 type AccountData = {
   portfolio: {
@@ -56,6 +57,8 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
   // The "active" symbol drives both the chart and the trade ticket.
   const [active, setActive] = useState<string | undefined>();
   const [resetting, setResetting] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // Default the active symbol to the first holding once data loads; never
   // override a selection the user has already made.
@@ -69,27 +72,21 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
 
   const { portfolio, positions, trades, summary } = data;
 
-  async function resetAccount() {
-    const input = prompt(
-      "Reset this account? All positions and history will be wiped.\n\nNew starting balance (leave blank to keep current):",
-      ""
-    );
-    if (input === null) return; // cancelled
-    const body: { startingBalance?: number } = {};
-    if (input.trim() !== "") {
-      const n = Number(input);
-      if (!Number.isFinite(n) || n <= 0) {
-        alert("Please enter a valid positive number.");
-        return;
-      }
-      body.startingBalance = n;
+  async function doReset(value: string) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) {
+      setResetError("Enter a valid positive starting balance.");
+      return;
     }
+    setResetError(null);
     setResetting(true);
     try {
-      await postJson(`/api/portfolios/${portfolioId}/reset`, body);
+      await postJson(`/api/portfolios/${portfolioId}/reset`, { startingBalance: n });
+      setResetOpen(false);
+      setActive(undefined);
       mutate();
     } catch (err) {
-      alert((err as Error).message);
+      setResetError((err as Error).message);
     } finally {
       setResetting(false);
     }
@@ -105,7 +102,14 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
             Started with {fmtMoney(portfolio.startingBalance)}
           </p>
         </div>
-        <button onClick={resetAccount} disabled={resetting} className="btn-ghost">
+        <button
+          onClick={() => {
+            setResetError(null);
+            setResetOpen(true);
+          }}
+          disabled={resetting}
+          className="btn-ghost"
+        >
           {resetting ? "Resetting…" : "Reset account"}
         </button>
       </div>
@@ -147,6 +151,21 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
           />
         </div>
       </div>
+
+      <PromptDialog
+        open={resetOpen}
+        title="Reset account"
+        message="This wipes all positions and trade history, then restores cash to the starting balance below."
+        label="New starting balance ($)"
+        type="number"
+        defaultValue={String(portfolio.startingBalance)}
+        confirmLabel="Reset account"
+        danger
+        busy={resetting}
+        error={resetError}
+        onConfirm={doReset}
+        onCancel={() => setResetOpen(false)}
+      />
     </div>
   );
 }
