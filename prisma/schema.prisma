@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// NextAuth models
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String      @id @default(cuid())
+  name          String?
+  email         String?     @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  portfolios    Portfolio[]
+  createdAt     DateTime    @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Trading domain
+// ---------------------------------------------------------------------------
+
+// A paper trading account. A user may own up to 20 (enforced in the API).
+model Portfolio {
+  id             String     @id @default(cuid())
+  userId         String
+  name           String
+  // Starting/reset balance chosen by the user.
+  startingBalance Float
+  // Uninvested cash currently available.
+  cash           Float
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions Position[]
+  trades    Trade[]
+
+  @@index([userId])
+}
+
+// An open holding of a symbol within a portfolio.
+model Position {
+  id          String    @id @default(cuid())
+  portfolioId String
+  symbol      String
+  quantity    Float
+  // Weighted average cost basis per share.
+  avgCost     Float
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, symbol])
+  @@index([portfolioId])
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+// An executed paper trade (the immutable ledger).
+model Trade {
+  id          String    @id @default(cuid())
+  portfolioId String
+  symbol      String
+  side        TradeSide
+  quantity    Float
+  price       Float
+  // Realized profit/loss booked on a SELL (0 for BUY).
+  realizedPnl Float     @default(0)
+  createdAt   DateTime  @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId])
+}
