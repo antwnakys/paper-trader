@@ -75,11 +75,25 @@ model Portfolio {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  positions Position[]
-  trades    Trade[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions    Position[]
+  trades       Trade[]
+  equityPoints EquityPoint[]
 
   @@index([userId])
+}
+
+// A point-in-time snapshot of an account's total equity, used for the
+// equity-over-time curve. Recorded periodically when the account is viewed.
+model EquityPoint {
+  id          String    @id @default(cuid())
+  portfolioId String
+  equity      Float
+  createdAt   DateTime  @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId])
 }
 
 // An open holding of a symbol within a portfolio.

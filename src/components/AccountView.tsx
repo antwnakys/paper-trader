@@ -7,6 +7,7 @@ import { fetcher, postJson } from "@/lib/fetcher";
 import { fmtMoney, fmtNumber, fmtPercent, pnlClass } from "@/lib/format";
 import TradeTicket from "@/components/TradeTicket";
 import StockChart from "@/components/StockChart";
+import EquityCurve from "@/components/EquityCurve";
 import PromptDialog from "@/components/PromptDialog";
 
 type AccountData = {
@@ -38,6 +39,7 @@ type AccountData = {
     realizedPnl: number;
     createdAt: string;
   }[];
+  equityHistory: { t: number; equity: number }[];
   summary: {
     cash: number;
     holdingsValue: number;
@@ -134,8 +136,12 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
           </div>
         </aside>
 
-        {/* Middle: chart + positions + history */}
+        {/* Middle: equity curve + chart + positions + history */}
         <div className="min-w-0 space-y-6">
+          <EquityCurve
+            history={data.equityHistory}
+            startingBalance={portfolio.startingBalance}
+          />
           <StockChart symbol={active} />
           <Positions positions={positions} active={active} onPick={setActive} />
           <History trades={trades} />
