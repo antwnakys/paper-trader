@@ -10,12 +10,24 @@ export default function Header({
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-bg/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
-          <span className="grid h-7 w-7 place-items-center rounded-md bg-brand text-white">
-            ▲
-          </span>
-          PaperTrader
-        </Link>
+        <div className="flex items-center gap-5">
+          <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
+            <span className="grid h-7 w-7 place-items-center rounded-md bg-brand text-white">
+              ▲
+            </span>
+            PaperTrader
+          </Link>
+          {user && (
+            <nav className="flex items-center gap-4 text-sm text-muted">
+              <Link href="/dashboard" className="hover:text-text">
+                Accounts
+              </Link>
+              <Link href="/leaderboard" className="hover:text-text">
+                Leaderboard
+              </Link>
+            </nav>
+          )}
+        </div>
         {user && (
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
