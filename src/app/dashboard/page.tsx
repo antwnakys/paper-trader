@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Header from "@/components/Header";
 import AccountsManager from "@/components/AccountsManager";
+import MarketOverview from "@/components/MarketOverview";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -13,6 +14,9 @@ export default async function DashboardPage() {
     <>
       <Header user={session.user} />
       <main className="mx-auto max-w-6xl px-4 py-8">
+        <div className="mb-6">
+          <MarketOverview />
+        </div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold">Your accounts</h1>
           <p className="text-sm text-muted">

@@ -8,6 +8,8 @@ import { fmtMoney, fmtNumber, fmtPercent, pnlClass } from "@/lib/format";
 import TradeTicket from "@/components/TradeTicket";
 import StockChart from "@/components/StockChart";
 import EquityCurve from "@/components/EquityCurve";
+import AllocationChart from "@/components/AllocationChart";
+import Watchlist from "@/components/Watchlist";
 import PromptDialog from "@/components/PromptDialog";
 
 type AccountData = {
@@ -143,18 +145,20 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
             startingBalance={portfolio.startingBalance}
           />
           <StockChart symbol={active} />
+          <AllocationChart positions={positions} cash={summary.cash} />
           <Positions positions={positions} active={active} onPick={setActive} />
-          <History trades={trades} />
+          <History trades={trades} accountName={portfolio.name} />
         </div>
 
-        {/* Right: trade ticket */}
-        <div className="lg:sticky lg:top-20 lg:self-start">
+        {/* Right: trade ticket + watchlist */}
+        <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
           <TradeTicket
             portfolioId={portfolioId}
             cash={summary.cash}
             presetSymbol={active}
             onDone={() => mutate()}
           />
+          <Watchlist active={active} onPick={setActive} />
         </div>
       </div>
 
@@ -223,6 +227,7 @@ function Positions({
                 <th className="px-4 py-2 text-right">Qty</th>
                 <th className="px-4 py-2 text-right">Avg cost</th>
                 <th className="px-4 py-2 text-right">Price</th>
+                <th className="px-4 py-2 text-right">Day</th>
                 <th className="px-4 py-2 text-right">Value</th>
                 <th className="px-4 py-2 text-right">Unrealized</th>
                 <th className="px-4 py-2"></th>
@@ -247,6 +252,9 @@ function Positions({
                   <td className="px-4 py-2 text-right font-mono">{fmtNumber(p.quantity)}</td>
                   <td className="px-4 py-2 text-right font-mono">{fmtMoney(p.avgCost)}</td>
                   <td className="px-4 py-2 text-right font-mono">{fmtMoney(p.price)}</td>
+                  <td className={`px-4 py-2 text-right font-mono ${pnlClass(p.changePercent)}`}>
+                    {fmtPercent(p.changePercent)}
+                  </td>
                   <td className="px-4 py-2 text-right font-mono">{fmtMoney(p.marketValue)}</td>
                   <td className={`px-4 py-2 text-right font-mono ${pnlClass(p.unrealizedPnl)}`}>
                     {fmtMoney(p.unrealizedPnl, { sign: true })}
@@ -275,10 +283,44 @@ function Positions({
   );
 }
 
-function History({ trades }: { trades: AccountData["trades"] }) {
+function History({
+  trades,
+  accountName,
+}: {
+  trades: AccountData["trades"];
+  accountName: string;
+}) {
+  function exportCsv() {
+    const header = ["Time", "Side", "Symbol", "Quantity", "Price", "RealizedPnL"];
+    const rows = trades.map((t) => [
+      new Date(t.createdAt).toISOString(),
+      t.side,
+      t.symbol,
+      t.quantity,
+      t.price,
+      t.realizedPnl,
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${accountName.replace(/[^a-z0-9]+/gi, "_")}_trades.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="card overflow-hidden">
-      <div className="border-b border-border px-4 py-3 font-semibold">Trade history</div>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <span className="font-semibold">Trade history</span>
+        {trades.length > 0 && (
+          <button onClick={exportCsv} className="text-xs text-brand hover:underline">
+            Export CSV
+          </button>
+        )}
+      </div>
       {trades.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted">No trades yet.</p>
       ) : (

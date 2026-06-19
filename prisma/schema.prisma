@@ -21,7 +21,21 @@ model User {
   accounts      Account[]
   sessions      Session[]
   portfolios    Portfolio[]
+  watchlist     WatchlistItem[]
   createdAt     DateTime    @default(now())
+}
+
+// A symbol the user follows (not tied to any single account).
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  symbol    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, symbol])
+  @@index([userId])
 }
 
 model Account {
