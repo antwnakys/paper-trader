@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { fetcher, postJson } from "@/lib/fetcher";
 import { fmtMoney, fmtPercent, pnlClass } from "@/lib/format";
+import { useToast } from "@/components/Toast";
 
 type Quote = {
   symbol: string;
@@ -36,8 +37,11 @@ export default function TradeTicket({
   const [amount, setAmount] = useState("1000");
   const [mode, setMode] = useState<"shares" | "dollars">("shares");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+  const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [limitPrice, setLimitPrice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const toast = useToast();
 
   // Allow parent (e.g. a position row) to preload a symbol into the ticket.
   useEffect(() => {
@@ -68,6 +72,8 @@ export default function TradeTicket({
     try {
       const data = await fetcher(`/api/quote?symbol=${encodeURIComponent(sym)}`);
       setQuote(data.quote);
+      // Seed the limit price with the current price the first time.
+      setLimitPrice((lp) => (lp ? lp : String(data.quote?.price ?? "")));
     } catch {
       setQuote(null);
       setMsg({ kind: "err", text: `No market data for ${sym}` });
@@ -91,10 +97,13 @@ export default function TradeTicket({
     setQuery(s);
     setShowMatches(false);
     setMsg(null);
+    setLimitPrice(""); // reseed for the new symbol
     loadQuote(s);
   }
 
   const price = quote?.price ?? 0;
+  // For limit orders, size/cost estimates use the limit price.
+  const refPrice = orderType === "LIMIT" ? Number(limitPrice) || 0 : price;
   const quantity = Number(qty);
   const amountNum = Number(amount);
   // Estimated cost/proceeds and implied share count, per input mode.
@@ -103,18 +112,19 @@ export default function TradeTicket({
       ? Number.isFinite(amountNum)
         ? amountNum
         : 0
-      : quote && Number.isFinite(quantity)
-      ? price * quantity
+      : refPrice > 0 && Number.isFinite(quantity)
+      ? refPrice * quantity
       : 0;
   const estShares =
     mode === "dollars"
-      ? price > 0 && Number.isFinite(amountNum)
-        ? amountNum / price
+      ? refPrice > 0 && Number.isFinite(amountNum)
+        ? amountNum / refPrice
         : 0
       : Number.isFinite(quantity)
       ? quantity
       : 0;
-  const canAfford = side === "SELL" || estimate <= cash;
+  // Limit orders don't reserve cash up front, so only gate market buys.
+  const canAfford = side === "SELL" || orderType === "LIMIT" || estimate <= cash;
 
   async function submit() {
     const valid =
@@ -131,22 +141,37 @@ export default function TradeTicket({
       });
       return;
     }
+    const limit = Number(limitPrice);
+    if (orderType === "LIMIT" && (!Number.isFinite(limit) || limit <= 0)) {
+      setMsg({ kind: "err", text: "Enter a valid limit price." });
+      return;
+    }
     setSubmitting(true);
     setMsg(null);
     try {
       const data = await postJson(`/api/portfolios/${portfolioId}/orders`, {
         symbol,
         side,
+        type: orderType,
+        ...(orderType === "LIMIT" ? { limitPrice: limit } : {}),
         ...(mode === "dollars" ? { amount: amountNum } : { quantity }),
       });
-      const t = data.trade;
-      setMsg({
-        kind: "ok",
-        text: `${t.side} ${t.quantity} ${t.symbol} @ ${fmtMoney(t.price)}`,
-      });
+      if (orderType === "LIMIT") {
+        const sizeLabel = mode === "dollars" ? fmtMoney(amountNum) : `${quantity} ${symbol}`;
+        const text = `Limit ${side} ${sizeLabel} @ ${fmtMoney(limit)} placed`;
+        setMsg({ kind: "ok", text });
+        toast(text, "ok");
+      } else {
+        const t = data.trade;
+        const text = `${t.side} ${t.quantity} ${t.symbol} @ ${fmtMoney(t.price)}`;
+        setMsg({ kind: "ok", text });
+        toast(text, "ok");
+      }
       onDone();
     } catch (err) {
-      setMsg({ kind: "err", text: (err as Error).message });
+      const text = (err as Error).message;
+      setMsg({ kind: "err", text });
+      toast(text, "err");
     } finally {
       setSubmitting(false);
     }
@@ -232,6 +257,40 @@ export default function TradeTicket({
           Sell
         </button>
       </div>
+
+      {/* Order type: market or limit */}
+      <div className="mt-3 inline-flex rounded-lg border border-border bg-panel2 p-0.5 text-xs">
+        {(["MARKET", "LIMIT"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setOrderType(t)}
+            className={`rounded-md px-3 py-1 capitalize ${
+              orderType === t ? "bg-border text-text" : "text-muted"
+            }`}
+          >
+            {t.toLowerCase()}
+          </button>
+        ))}
+      </div>
+
+      {orderType === "LIMIT" && (
+        <div className="mt-3">
+          <label className="label">Limit price ($)</label>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            step="any"
+            value={limitPrice}
+            onChange={(e) => setLimitPrice(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-muted">
+            Fills when the price {side === "BUY" ? "drops to or below" : "rises to or above"} your
+            limit.
+          </p>
+        </div>
+      )}
 
       {/* Order size: shares or dollars */}
       <div className="mt-4">
@@ -332,6 +391,8 @@ export default function TradeTicket({
           ? "Placing…"
           : side === "BUY" && !canAfford
           ? "Insufficient cash"
+          : orderType === "LIMIT"
+          ? `Place limit ${side.toLowerCase()}`
           : `${side} ${symbol || ""}`}
       </button>
 

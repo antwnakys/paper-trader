@@ -164,3 +164,49 @@ export async function executeOrder(params: {
     };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
+
+/**
+ * Fill any resting limit orders whose trigger has been crossed.
+ *
+ * Called lazily when an account is viewed (there is no background worker). A BUY
+ * fills when the market price is at/below its limit; a SELL when at/above. Orders
+ * that can't fill yet (e.g. insufficient cash) are left open. Returns the symbols
+ * that filled, for surfacing to the user.
+ */
+export async function processPendingFills(
+  userId: string,
+  portfolioId: string
+): Promise<string[]> {
+  const open = await prisma.pendingOrder.findMany({
+    where: { portfolioId, status: "OPEN", portfolio: { userId } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (open.length === 0) return [];
+
+  const filled: string[] = [];
+  for (const o of open) {
+    const quote = await getQuote(o.symbol);
+    if (!quote) continue;
+    const crossed =
+      o.side === "BUY" ? quote.price <= o.limitPrice : quote.price >= o.limitPrice;
+    if (!crossed) continue;
+
+    try {
+      const res = await executeOrder({
+        userId,
+        portfolioId,
+        symbol: o.symbol,
+        side: o.side,
+        ...(o.amount != null ? { amount: o.amount } : { quantity: o.quantity ?? 0 }),
+      });
+      await prisma.pendingOrder.update({
+        where: { id: o.id },
+        data: { status: "FILLED", filledAt: new Date(), filledPrice: res.price },
+      });
+      filled.push(o.symbol);
+    } catch {
+      // Can't fill right now (e.g. insufficient cash/shares) — leave it open.
+    }
+  }
+  return filled;
+}

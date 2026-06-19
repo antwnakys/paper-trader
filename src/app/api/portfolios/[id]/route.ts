@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getQuote } from "@/lib/market";
+import { processPendingFills } from "@/lib/trading";
 
 type Params = { params: { id: string } };
 
@@ -11,11 +12,18 @@ export async function GET(_req: Request, { params }: Params) {
   const userId = await getCurrentUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Fill any resting limit orders whose price has been crossed.
+  const filledSymbols = await processPendingFills(userId, params.id);
+
   const portfolio = await prisma.portfolio.findFirst({
     where: { id: params.id, userId },
     include: {
       positions: { orderBy: { symbol: "asc" } },
       trades: { orderBy: { createdAt: "desc" }, take: 100 },
+      pendingOrders: {
+        where: { status: "OPEN" },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
   if (!portfolio) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -82,6 +90,8 @@ export async function GET(_req: Request, { params }: Params) {
     },
     positions,
     trades: portfolio.trades,
+    pendingOrders: portfolio.pendingOrders,
+    justFilled: filledSymbols,
     equityHistory,
     summary: {
       cash: portfolio.cash,
@@ -95,6 +105,28 @@ export async function GET(_req: Request, { params }: Params) {
       realizedPnl,
     },
   });
+}
+
+// PATCH /api/portfolios/:id — rename an account.
+export async function PATCH(req: Request, { params }: Params) {
+  const userId = await getCurrentUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const name = String(body.name ?? "").trim();
+  if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+
+  const portfolio = await prisma.portfolio.findFirst({
+    where: { id: params.id, userId },
+    select: { id: true },
+  });
+  if (!portfolio) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await prisma.portfolio.update({
+    where: { id: portfolio.id },
+    data: { name: name.slice(0, 60) },
+  });
+  return NextResponse.json({ ok: true });
 }
 
 // DELETE /api/portfolios/:id — permanently delete an account.

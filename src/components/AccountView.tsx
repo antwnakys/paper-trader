@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 
-import { fetcher, postJson } from "@/lib/fetcher";
+import { fetcher, postJson, patchJson } from "@/lib/fetcher";
 import { fmtMoney, fmtNumber, fmtPercent, pnlClass } from "@/lib/format";
 import TradeTicket from "@/components/TradeTicket";
 import StockChart from "@/components/StockChart";
@@ -11,7 +11,9 @@ import EquityCurve from "@/components/EquityCurve";
 import AllocationChart from "@/components/AllocationChart";
 import Watchlist from "@/components/Watchlist";
 import CompanyInfo from "@/components/CompanyInfo";
+import OrdersPanel from "@/components/OrdersPanel";
 import PromptDialog from "@/components/PromptDialog";
+import { useToast } from "@/components/Toast";
 
 type AccountData = {
   portfolio: {
@@ -42,6 +44,15 @@ type AccountData = {
     realizedPnl: number;
     createdAt: string;
   }[];
+  pendingOrders: {
+    id: string;
+    symbol: string;
+    side: "BUY" | "SELL";
+    quantity: number | null;
+    amount: number | null;
+    limitPrice: number;
+  }[];
+  justFilled: string[];
   equityHistory: { t: number; equity: number }[];
   summary: {
     cash: number;
@@ -64,6 +75,10 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
   const [resetting, setResetting] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const toast = useToast();
 
   // Default the active symbol to the first holding once data loads; never
   // override a selection the user has already made.
@@ -71,6 +86,11 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
     const first = data?.positions?.[0]?.symbol;
     if (first) setActive((cur) => cur ?? first);
   }, [data]);
+
+  // Notify when resting limit orders fill on load.
+  useEffect(() => {
+    data?.justFilled?.forEach((sym) => toast(`Limit order filled: ${sym}`, "ok"));
+  }, [data, toast]);
 
   if (isLoading) return <p className="mt-8 text-muted">Loading account…</p>;
   if (error || !data) return <p className="mt-8 text-down">Failed to load account.</p>;
@@ -97,12 +117,44 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
     }
   }
 
+  async function doRename(value: string) {
+    const name = value.trim();
+    if (!name) {
+      setRenameError("Enter an account name.");
+      return;
+    }
+    setRenameError(null);
+    setRenaming(true);
+    try {
+      await patchJson(`/api/portfolios/${portfolioId}`, { name });
+      setRenameOpen(false);
+      mutate();
+      toast("Account renamed", "ok");
+    } catch (err) {
+      setRenameError((err as Error).message);
+    } finally {
+      setRenaming(false);
+    }
+  }
+
   return (
     <div className="mt-4">
       {/* Header + summary */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">{portfolio.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">{portfolio.name}</h1>
+            <button
+              onClick={() => {
+                setRenameError(null);
+                setRenameOpen(true);
+              }}
+              className="text-muted hover:text-text"
+              title="Rename account"
+            >
+              ✎
+            </button>
+          </div>
           <p className="text-sm text-muted">
             Started with {fmtMoney(portfolio.startingBalance)}
           </p>
@@ -148,6 +200,11 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
           <StockChart symbol={active} />
           <CompanyInfo symbol={active} />
           <AllocationChart positions={positions} cash={summary.cash} />
+          <OrdersPanel
+            portfolioId={portfolioId}
+            orders={data.pendingOrders}
+            onChange={() => mutate()}
+          />
           <Positions positions={positions} active={active} onPick={setActive} />
           <History trades={trades} accountName={portfolio.name} />
         </div>
@@ -177,6 +234,18 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
         error={resetError}
         onConfirm={doReset}
         onCancel={() => setResetOpen(false)}
+      />
+
+      <PromptDialog
+        open={renameOpen}
+        title="Rename account"
+        label="Account name"
+        defaultValue={portfolio.name}
+        confirmLabel="Save"
+        busy={renaming}
+        error={renameError}
+        onConfirm={doRename}
+        onCancel={() => setRenameOpen(false)}
       />
     </div>
   );
