@@ -57,27 +57,16 @@ export async function GET(_req: Request, { params }: Params) {
   const equity = portfolio.cash + holdingsValue;
   const realizedPnl = portfolio.trades.reduce((s, t) => s + t.realizedPnl, 0);
 
-  // Build the equity-over-time curve. Record a fresh snapshot at most once an
-  // hour so polling doesn't spam the table, then assemble the series anchored to
-  // the account's creation (at its starting balance) and its current equity.
-  const stored = await prisma.equityPoint.findMany({
+  // Record an equity snapshot (at most once an hour) so the dashboard
+  // comparison sparklines build history over time.
+  const lastPoint = await prisma.equityPoint.findFirst({
     where: { portfolioId: portfolio.id },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
   });
-  const now = Date.now();
-  const lastStored = stored[stored.length - 1];
-  if (!lastStored || now - lastStored.createdAt.getTime() > 60 * 60 * 1000) {
+  if (!lastPoint || Date.now() - lastPoint.createdAt.getTime() > 60 * 60 * 1000) {
     await prisma.equityPoint.create({
       data: { portfolioId: portfolio.id, equity },
     });
-  }
-  const equityHistory: { t: number; equity: number }[] = [
-    { t: portfolio.createdAt.getTime(), equity: portfolio.startingBalance },
-    ...stored.map((p) => ({ t: p.createdAt.getTime(), equity: p.equity })),
-  ];
-  // Ensure the curve ends at the live equity value.
-  if (now - equityHistory[equityHistory.length - 1].t > 60_000) {
-    equityHistory.push({ t: now, equity });
   }
 
   return NextResponse.json({
@@ -92,7 +81,6 @@ export async function GET(_req: Request, { params }: Params) {
     trades: portfolio.trades,
     pendingOrders: portfolio.pendingOrders,
     justFilled: filledSymbols,
-    equityHistory,
     summary: {
       cash: portfolio.cash,
       holdingsValue,
