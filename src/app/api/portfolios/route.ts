@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getQuote } from "@/lib/market";
 import {
   DEFAULT_STARTING_BALANCE,
   MAX_PORTFOLIOS_PER_USER,
@@ -9,7 +10,8 @@ import {
   MIN_STARTING_BALANCE,
 } from "@/lib/constants";
 
-// GET /api/portfolios — list the signed-in user's paper trading accounts.
+// GET /api/portfolios — list the signed-in user's accounts with live equity,
+// total return, and a compact equity history for the comparison sparklines.
 export async function GET() {
   const userId = await getCurrentUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,11 +21,48 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
     include: {
       positions: true,
+      equityPoints: { orderBy: { createdAt: "asc" } },
       _count: { select: { trades: true } },
     },
   });
 
-  return NextResponse.json({ portfolios, max: MAX_PORTFOLIOS_PER_USER });
+  // Quote every distinct held symbol once.
+  const symbols = [...new Set(portfolios.flatMap((p) => p.positions.map((x) => x.symbol)))];
+  const priceEntries = await Promise.all(
+    symbols.map(async (s) => [s, (await getQuote(s))?.price ?? null] as const)
+  );
+  const priceMap = new Map(priceEntries);
+
+  const now = Date.now();
+  const result = portfolios.map((p) => {
+    const holdings = p.positions.reduce((sum, pos) => {
+      const price = priceMap.get(pos.symbol) ?? pos.avgCost;
+      return sum + price * pos.quantity;
+    }, 0);
+    const equity = p.cash + holdings;
+    const totalReturn = equity - p.startingBalance;
+    const totalReturnPercent =
+      p.startingBalance > 0 ? (totalReturn / p.startingBalance) * 100 : 0;
+    const equityHistory = [
+      { t: p.createdAt.getTime(), equity: p.startingBalance },
+      ...p.equityPoints.map((e) => ({ t: e.createdAt.getTime(), equity: e.equity })),
+      { t: now, equity },
+    ];
+    return {
+      id: p.id,
+      name: p.name,
+      startingBalance: p.startingBalance,
+      cash: p.cash,
+      positionsCount: p.positions.length,
+      tradesCount: p._count.trades,
+      equity,
+      totalReturn,
+      totalReturnPercent,
+      equityHistory,
+    };
+  });
+
+  return NextResponse.json({ portfolios: result, max: MAX_PORTFOLIOS_PER_USER });
 }
 
 // POST /api/portfolios — create a new account with a chosen starting balance.

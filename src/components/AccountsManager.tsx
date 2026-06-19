@@ -5,17 +5,22 @@ import { useState } from "react";
 import useSWR from "swr";
 
 import { fetcher, postJson, del } from "@/lib/fetcher";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, fmtPercent, pnlClass } from "@/lib/format";
 import { DEFAULT_STARTING_BALANCE } from "@/lib/constants";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Sparkline from "@/components/Sparkline";
 
 type Portfolio = {
   id: string;
   name: string;
   startingBalance: number;
   cash: number;
-  positions: { id: string }[];
-  _count: { trades: number };
+  positionsCount: number;
+  tradesCount: number;
+  equity: number;
+  totalReturn: number;
+  totalReturnPercent: number;
+  equityHistory: { t: number; equity: number }[];
 };
 
 export default function AccountsManager() {
@@ -37,6 +42,9 @@ export default function AccountsManager() {
   const portfolios = data?.portfolios ?? [];
   const max = data?.max ?? 20;
   const atLimit = portfolios.length >= max;
+  // Rank accounts by total return for the comparison view.
+  const ranked = [...portfolios].sort((a, b) => b.totalReturnPercent - a.totalReturnPercent);
+  const showRank = ranked.length > 1;
 
   async function createAccount(e: React.FormEvent) {
     e.preventDefault();
@@ -125,10 +133,20 @@ export default function AccountsManager() {
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {portfolios.map((p) => (
+          {ranked.map((p, i) => (
             <div key={p.id} className="card flex flex-col p-5">
-              <div className="flex items-start justify-between">
-                <div className="font-semibold">{p.name}</div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {showRank && (
+                    <span
+                      className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-panel2 text-[11px] text-muted"
+                      title={`Rank #${i + 1} by return`}
+                    >
+                      {i + 1}
+                    </span>
+                  )}
+                  <span className="font-semibold">{p.name}</span>
+                </div>
                 <button
                   onClick={() => setPendingDelete({ id: p.id, name: p.name })}
                   className="text-xs text-muted hover:text-down"
@@ -137,6 +155,19 @@ export default function AccountsManager() {
                   Delete
                 </button>
               </div>
+
+              <div className="mt-3 flex items-end justify-between gap-2">
+                <div>
+                  <div className="font-mono text-xl font-semibold">{fmtMoney(p.equity)}</div>
+                  <div className={`text-sm ${pnlClass(p.totalReturn)}`}>
+                    {fmtMoney(p.totalReturn, { sign: true })} ({fmtPercent(p.totalReturnPercent)})
+                  </div>
+                </div>
+                <div className="w-24">
+                  <Sparkline data={p.equityHistory} baseline={p.startingBalance} />
+                </div>
+              </div>
+
               <dl className="mt-4 space-y-1 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-muted">Cash</dt>
@@ -147,12 +178,10 @@ export default function AccountsManager() {
                   <dd className="font-mono">{fmtMoney(p.startingBalance)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted">Open positions</dt>
-                  <dd className="font-mono">{p.positions.length}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-muted">Trades</dt>
-                  <dd className="font-mono">{p._count.trades}</dd>
+                  <dt className="text-muted">Positions · Trades</dt>
+                  <dd className="font-mono">
+                    {p.positionsCount} · {p.tradesCount}
+                  </dd>
                 </div>
               </dl>
               <Link href={`/account/${p.id}`} className="btn-brand mt-5">

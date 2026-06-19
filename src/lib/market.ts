@@ -226,3 +226,97 @@ export async function getSeries(
     c: +c.toFixed(2),
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Company profile & news
+// ---------------------------------------------------------------------------
+
+export type CompanyProfile = {
+  symbol: string;
+  name: string;
+  logo: string;
+  industry: string;
+  exchange: string;
+  weburl: string;
+};
+
+export type NewsItem = {
+  id: number;
+  headline: string;
+  source: string;
+  url: string;
+  datetime: number;
+  image: string;
+};
+
+export async function getCompanyProfile(symbol: string): Promise<CompanyProfile | null> {
+  const sym = symbol.trim().toUpperCase();
+  if (!sym) return null;
+
+  const fallback: CompanyProfile = {
+    symbol: sym,
+    name: SIM_UNIVERSE.find((s) => s.symbol === sym)?.description ?? sym,
+    logo: "",
+    industry: "—",
+    exchange: "—",
+    weburl: "",
+  };
+  if (!hasFinnhub()) return fallback;
+
+  try {
+    const res = await fetch(
+      `${FINNHUB_BASE}/stock/profile2?symbol=${encodeURIComponent(sym)}&token=${process.env.FINNHUB_API_KEY}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return fallback;
+    const d = (await res.json()) as {
+      name?: string;
+      logo?: string;
+      finnhubIndustry?: string;
+      exchange?: string;
+      weburl?: string;
+    };
+    if (!d || !d.name) return fallback;
+    return {
+      symbol: sym,
+      name: d.name,
+      logo: d.logo ?? "",
+      industry: d.finnhubIndustry ?? "—",
+      exchange: d.exchange ?? "—",
+      weburl: d.weburl ?? "",
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export async function getCompanyNews(symbol: string, limit = 6): Promise<NewsItem[]> {
+  const sym = symbol.trim().toUpperCase();
+  if (!sym || !hasFinnhub()) return [];
+
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const to = new Date();
+  const from = new Date(Date.now() - 7 * DAY_MS);
+
+  try {
+    const res = await fetch(
+      `${FINNHUB_BASE}/company-news?symbol=${encodeURIComponent(sym)}&from=${fmt(from)}&to=${fmt(to)}&token=${process.env.FINNHUB_API_KEY}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return [];
+    const arr = (await res.json()) as NewsItem[];
+    return (Array.isArray(arr) ? arr : [])
+      .filter((n) => n.headline && n.url)
+      .slice(0, limit)
+      .map((n) => ({
+        id: n.id,
+        headline: n.headline,
+        source: n.source,
+        url: n.url,
+        datetime: n.datetime,
+        image: n.image,
+      }));
+  } catch {
+    return [];
+  }
+}

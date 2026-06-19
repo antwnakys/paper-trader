@@ -10,6 +10,7 @@ import StockChart from "@/components/StockChart";
 import EquityCurve from "@/components/EquityCurve";
 import AllocationChart from "@/components/AllocationChart";
 import Watchlist from "@/components/Watchlist";
+import CompanyInfo from "@/components/CompanyInfo";
 import PromptDialog from "@/components/PromptDialog";
 
 type AccountData = {
@@ -145,6 +146,7 @@ export default function AccountView({ portfolioId }: { portfolioId: string }) {
             startingBalance={portfolio.startingBalance}
           />
           <StockChart symbol={active} />
+          <CompanyInfo symbol={active} />
           <AllocationChart positions={positions} cash={summary.cash} />
           <Positions positions={positions} active={active} onPick={setActive} />
           <History trades={trades} accountName={portfolio.name} />
