@@ -15,11 +15,11 @@ Built as a portfolio piece with **Next.js 14 (App Router)**, **TypeScript**,
 
 ## Screenshots
 
-**Manage up to 20 paper trading accounts**
+**Dashboard — live market overview and your accounts ranked by return**
 
 ![Accounts dashboard](docs/screenshots/dashboard.png)
 
-**Trade live US stocks with charts, positions & full P&L**
+**Trading view — live chart, company news, market/limit orders, and watchlist**
 
 ![Trading view](docs/screenshots/account.png)
 
