@@ -22,9 +22,6 @@ export default function Header({
               <Link href="/dashboard" className="hover:text-text">
                 Accounts
               </Link>
-              <Link href="/leaderboard" className="hover:text-text">
-                Leaderboard
-              </Link>
             </nav>
           )}
         </div>
